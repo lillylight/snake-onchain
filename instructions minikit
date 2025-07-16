@@ -1,0 +1,389 @@
+
+Build with MiniKit
+Integrating MiniKit with Existing Applications
+
+Copy page
+
+Guide for integrating MiniKit into an existing Next.js project with installation, provider setup, and environment configuration
+
+This guide helps developers integrate MiniKit into an existing Next.js project. It includes installation steps, provider setup and environment configuration.
+
+This guide assumes you want to add MiniKit to an existing application. For new projects, use the MiniKit CLI for automatic setup.
+
+​
+Prerequisites
+Before you begin, confirm the following:
+
+Next.js Project Structure
+
+Deployment
+
+Farcaster Account
+
+Coinbase Developer Platform Account
+
+​
+Integration Steps
+1
+Install required dependencies
+
+MiniKit is available as part of OnchainKit.
+
+
+Copy
+
+Ask AI
+npm install @coinbase/onchainkit
+Verify installation by checking that @coinbase/onchainkit appears in your package.json.
+
+2
+Add the MiniKitProvider to your app
+
+Create and use the MiniKitProvider to initialise SDK context for your application.
+
+File: providers/MiniKitProvider.tsx
+
+
+Copy
+
+Ask AI
+'use client';
+
+import { MiniKitProvider } from '@coinbase/onchainkit/minikit';
+import { ReactNode } from 'react';
+import { base } from 'wagmi/chains';
+
+export function MiniKitContextProvider({ children }: { children: ReactNode }) {
+  return (
+    <MiniKitProvider
+      apiKey={process.env.NEXT_PUBLIC_CDP_CLIENT_API_KEY}
+      chain={base}
+    >
+      {children}
+    </MiniKitProvider>
+  );
+}
+Then wrap your app in app/layout.tsx:
+
+
+Copy
+
+Ask AI
+import { MiniKitContextProvider } from '@/providers/MiniKitProvider';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <MiniKitContextProvider>
+          {children}
+        </MiniKitContextProvider>
+      </body>
+    </html>
+  );
+}
+The provider automatically configures wagmi and react-query, and sets up connectors to use Farcaster when available.
+
+3
+Initialize MiniKit in your main page
+
+Use the useMiniKit hook to access the frame context and trigger readiness.
+
+File: app/page.tsx
+
+
+Copy
+
+Ask AI
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useMiniKit } from '@coinbase/onchainkit/minikit';
+
+export default function HomePage() {
+  const { setFrameReady, isFrameReady } = useMiniKit();
+
+  // The setFrameReady() function is called when your mini-app is ready to be shown
+  useEffect(() => {
+    if (!isFrameReady) {
+      setFrameReady();
+    }
+  }, [setFrameReady, isFrameReady]);
+
+  return <div>Your app content goes here</div>;
+}
+The setFrameReady() function removes the splash screen and shows your application. Only call this when your app is fully loaded and ready for user interaction.
+
+4
+Configure environment variables
+
+Add the required environment variables to your project and deployment platform.
+
+Required Variables
+Optional Variables
+These variables are essential for your MiniKit app to function:
+
+​
+NEXT_PUBLIC_ONCHAINKIT_PROJECT_NAME
+stringrequired
+The name of your Mini App as it appears to users
+
+​
+NEXT_PUBLIC_URL
+stringrequired
+The deployed URL of your application (must be HTTPS)
+
+​
+NEXT_PUBLIC_ONCHAINKIT_API_KEY
+stringrequired
+Your Coinbase Developer Platform API key
+
+​
+FARCASTER_HEADER
+stringrequired
+Generated during manifest creation for account association
+
+​
+FARCASTER_PAYLOAD
+stringrequired
+Generated during manifest creation for account association
+
+​
+FARCASTER_SIGNATURE
+stringrequired
+Generated during manifest creation for account association
+
+Don’t forget to include all referenced images in your public/ folder and ensure they’re accessible via HTTPS.
+
+5
+Generate the manifest
+
+Use the OnchainKit CLI to generate account association credentials and update your environment variables.
+
+
+Copy
+
+Ask AI
+npx create-onchain --manifest
+Important: The wallet you connect must be your Farcaster custody wallet. You can import this wallet using the recovery phrase found in Farcaster under Settings → Advanced → Farcaster recovery phrase.
+
+Follow these substeps:
+
+Connect your Farcaster custody wallet
+Add your deployed Vercel URL
+Sign the manifest to generate association credentials
+The CLI will automatically update your local .env file
+After running this command locally, remember to update your deployment platform’s environment variables with the generated FARCASTER_HEADER, FARCASTER_PAYLOAD, and FARCASTER_SIGNATURE values.
+
+6
+Create .well-known/farcaster.json route
+
+The farcaster.json file contains metadata that allows clients to identify your Mini App and its capabilities.
+
+Create a route handler at app/.well-known/farcaster.json/route.ts:
+
+
+Copy
+
+Ask AI
+function withValidProperties(
+  properties: Record<string, undefined | string | string[]>,
+) {
+  return Object.fromEntries(
+    Object.entries(properties).filter(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.length > 0;
+      }
+      return !!value;
+    }),
+  );
+}
+
+export async function GET() {
+  const URL = process.env.NEXT_PUBLIC_URL;
+
+  return Response.json({
+    accountAssociation: {
+      header: process.env.FARCASTER_HEADER,
+      payload: process.env.FARCASTER_PAYLOAD,
+      signature: process.env.FARCASTER_SIGNATURE,
+    },
+    frame: withValidProperties({
+      version: "1",
+      name: process.env.NEXT_PUBLIC_ONCHAINKIT_PROJECT_NAME,
+      subtitle: process.env.NEXT_PUBLIC_APP_SUBTITLE,
+      description: process.env.NEXT_PUBLIC_APP_DESCRIPTION,
+      screenshotUrls: [],
+      iconUrl: process.env.NEXT_PUBLIC_APP_ICON,
+      splashImageUrl: process.env.NEXT_PUBLIC_APP_SPLASH_IMAGE,
+      splashBackgroundColor: process.env.NEXT_PUBLIC_SPLASH_BACKGROUND_COLOR,
+      homeUrl: URL,
+      webhookUrl: `${URL}/api/webhook`,
+      primaryCategory: process.env.NEXT_PUBLIC_APP_PRIMARY_CATEGORY,
+      tags: [],
+      heroImageUrl: process.env.NEXT_PUBLIC_APP_HERO_IMAGE,
+      tagline: process.env.NEXT_PUBLIC_APP_TAGLINE,
+      ogTitle: process.env.NEXT_PUBLIC_APP_OG_TITLE,
+      ogDescription: process.env.NEXT_PUBLIC_APP_OG_DESCRIPTION,
+      ogImageUrl: process.env.NEXT_PUBLIC_APP_OG_IMAGE,
+    }),
+  });
+}
+Test this endpoint by visiting https://yourdomain.com/.well-known/farcaster.json to ensure it returns valid JSON.
+
+7
+Define Farcaster frame metadata
+
+Configure the metadata that clients use to render your Mini App in posts and generate preview cards.
+
+File: app/layout.tsx
+
+
+Copy
+
+Ask AI
+import { Metadata } from 'next';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const URL = process.env.NEXT_PUBLIC_URL;
+  return {
+    title: process.env.NEXT_PUBLIC_ONCHAINKIT_PROJECT_NAME,
+    description:
+      "Generated by `create-onchain --mini`, a Next.js template for MiniKit",
+    other: {
+      "fc:frame": JSON.stringify({
+        version: "next",
+        imageUrl: process.env.NEXT_PUBLIC_APP_HERO_IMAGE,
+        button: {
+          title: `Launch ${process.env.NEXT_PUBLIC_ONCHAINKIT_PROJECT_NAME}`,
+          action: {
+            type: "launch_frame",
+            name: process.env.NEXT_PUBLIC_ONCHAINKIT_PROJECT_NAME,
+            url: URL,
+            splashImageUrl: process.env.NEXT_PUBLIC_SPLASH_IMAGE,
+            splashBackgroundColor:
+              process.env.NEXT_PUBLIC_SPLASH_BACKGROUND_COLOR,
+          },
+        },
+      }),
+    },
+  };
+}
+All image and API URLs used here must be publicly accessible via HTTPS. Test each URL in your browser before deploying.
+
+8
+Test and deploy your Mini App
+
+Before sharing your Mini App, validate that everything is working correctly.
+
+Pre-deployment Checklist
+Validation Tools
+Sharing Your App
+Verify the following before going live:
+
+✅ App is deployed at a public HTTPS domain
+✅ All environment variables are set on your deployment platform
+✅ All referenced images are accessible in your public/ folder
+✅ The .well-known/farcaster.json endpoint returns valid JSON
+✅ Your app loads without errors in a browser
+Need Help Debugging?
+If you encounter issues, check our comprehensive debugging guide for common problems and solutions.
+
+​
+Understanding MiniKit Context
+​
+What useMiniKit Gives You
+The useMiniKit() hook provides access to everything your Mini App needs to understand the Farcaster session:
+
+​
+context.user.fid
+string
+The Farcaster ID of the current user
+
+​
+context.client.added
+boolean
+Whether the user has added your Mini App to their account
+
+​
+context.location
+string
+Where the app was launched from (e.g., “cast”, “launcher”, “notification”)
+
+​
+isFrameReady
+boolean
+Whether your app has called setFrameReady() and is ready to be shown
+
+​
+setFrameReady
+() => void
+Function to call when your app is fully loaded and ready for interaction
+
+You can use this context to personalize the experience, trigger different flows, or track user behavior.
+
+​
+Available MiniKit Hooks
+MiniKit provides a comprehensive set of hooks designed to help you build rich, social experiences:
+
+useNotification
+Send in-app and push notifications to users who have added your frame
+
+useAddFrame
+Allow users to save your mini app to their Farcaster client for easy access
+
+useClose
+Programmatically close the mini app frame when appropriate
+
+useOpenUrl
+Open external URLs from within the frame context
+
+usePrimaryButton
+Configure and handle primary button interactions
+
+useViewProfile
+Navigate users to Farcaster profiles (their own or others)
+
+useAuthenticate
+Handle Farcaster authentication and sign-in flows
+
+Explore All Hooks
+Learn about all available MiniKit hooks, their parameters, and usage examples
+
+​
+Next Steps
+Now that your Mini App is integrated and deployed:
+
+1
+Test thoroughly
+
+Share your Mini App URL in Farcaster and test all functionality with real users.
+
+2
+Monitor and iterate
+
+Use analytics to understand how users interact with your app and identify areas for improvement.
+
+3
+Explore advanced features
+
+Consider adding notifications, authentication, or other MiniKit hooks to enhance the user experience.
+
+Was this page helpful?
+
+
+Yes
+
+No
+Suggest edits
+Raise issue
+Quickstart
+Common Issues & Debugging
+On this page
+Prerequisites
+Integration Steps
+Understanding MiniKit Context
+What useMiniKit Gives You
+Available MiniKit Hooks
+Next Steps
+Base Documentation home pagedark logo
